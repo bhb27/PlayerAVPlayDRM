@@ -35,8 +35,8 @@
      */
     var drms = {
         NO_DRM: {
-            name: 'VOD',
-            url: 'Vod_loadIdRequest()'
+            name: 'Live',
+            url: 'Live_loadIdRequest()'
         },
         PLAYREADY: {
             name: 'Playready',
@@ -261,7 +261,7 @@
             log('This application needs to be run on Tizen device');
             return;
         }
-        Vod_loadIdRequest();
+        Live_loadIdRequest();
     };
 
     function onload() {
@@ -310,13 +310,12 @@
     var streamer, Play_tokenResponse, offset = 0;
 
     //Generate Live link start
-        //Generate Vod link start
-    function Vod_loadIdRequest() {
+    function Live_loadIdRequest() {
         try {
 
             var xmlHttp = new XMLHttpRequest();
 
-            xmlHttp.open("GET", 'https://api.twitch.tv/kraken/videos/top?limit=1&broadcast_type=archive&sort=views', true);
+            xmlHttp.open("GET", 'https://api.twitch.tv/kraken/streams?limit=1&offset=' + offset, true);
 
             xmlHttp.timeout = 10000;
             xmlHttp.setRequestHeader('Client-ID', "ypvnuqrh98wqz1sr0ov3fgfu4jh1yx");
@@ -325,32 +324,34 @@
             xmlHttp.onreadystatechange = function() {
                 if (xmlHttp.readyState === 4) {
                     if (xmlHttp.status === 200) {
-                        streamer = JSON.parse(xmlHttp.responseText).videos[0]._id.substr(1);
-                        Vod_loadLinkRequest(1);
+                        streamer = JSON.parse(xmlHttp.responseText).streams[0].channel.name;
+                        Live_loadLinkRequest(1, 0);
                         return;
                     } else {
-                        Vod_loadIdRequest();
+                        Live_loadIdRequest();
                     }
                 }
             };
 
             xmlHttp.send(null);
         } catch (e) {
-            Vod_loadIdRequest();
+            Live_loadIdRequest();
         }
     }
 
-    function Vod_loadLinkRequest(bool) {
+    //errorCounter the stream may show as Live but it may have just whent offline
+    //and will not have a live link, them try the next stream from the list offset++
+    function Live_loadLinkRequest(bool, errorCounter) {
         try {
             var xmlHttp = new XMLHttpRequest();
 
             var theUrl;
             if (bool) {
-                theUrl = 'https://api.twitch.tv/api/vods/' + streamer + '/access_token';
+                theUrl = 'https://api.twitch.tv/api/channels/' + streamer + '/access_token';
             } else {
-                theUrl = 'http://usher.twitch.tv/vod/' + streamer +
-                    '.m3u8?player=twitchweb&&type=any&nauthsig=' + Play_tokenResponse.sig + '&nauth=' +
-                    escape(Play_tokenResponse.token) + '&allow_source=true&allow_audi_only=true&';
+                theUrl = 'http://usher.twitch.tv/api/channel/hls/' + streamer +
+                    '.m3u8?player=twitchweb&&type=any&sig=' + Play_tokenResponse.sig + '&token=' +
+                    escape(Play_tokenResponse.token) + '&allow_source=true&allow_audi_only=true';
             }
 
             xmlHttp.open("GET", theUrl, true);
@@ -361,25 +362,35 @@
 
             xmlHttp.onreadystatechange = function() {
                 if (xmlHttp.readyState === 4) {
-                    if (xmlHttp.status === 200) Vod_loadLinkSuccess(xmlHttp.responseText, bool);
-                    else Vod_loadLinkRequest(bool);
+                    if (xmlHttp.status === 200) Live_loadLinkSuccess(xmlHttp.responseText, bool);
+                    else if (errorCounter < 5) {
+                        Live_loadLinkRequest(bool, errorCounter + 1);
+                    } else {
+                        offset++;
+                        Live_loadIdRequest();
+                    }
                 }
             };
 
             xmlHttp.send();
         } catch (error) {
-            Vod_loadLinkRequest(bool);
+            if (errorCounter < 5) {
+                Live_loadLinkRequest(bool, errorCounter + 1);
+            } else {
+                offset++;
+                Live_loadIdRequest();
+            }
         }
     }
 
-    function Vod_loadLinkSuccess(responseText, bool) {
+    function Live_loadLinkSuccess(responseText, bool) {
         if (bool) {
             Play_tokenResponse = JSON.parse(responseText);
-            Vod_loadLinkRequest(0);
+            Live_loadLinkRequest(0, 0);
         } else {
-            //Generate Vod link start
+            //Generate Live link start
             drms.NO_DRM.url = Play_extractStreamLink(responseText)[0].split("\n")[2];
-            log("VOD link: " + drms.NO_DRM.url);
+            log("Live link: " + drms.NO_DRM.url);
             //back to original code
             onload();
         }
